@@ -7,6 +7,7 @@ module OpenSSL.Random
       randBytes
     , prandBytes
     , add
+    , fapdom
     ) where
 import           Foreign
 import           Foreign.C.Types
@@ -49,3 +50,7 @@ add :: BS.ByteString  -- ^ random data to be added to the pool
 add bs entropy =
   BS.useAsCStringLen bs $ \(ptr, len) ->
   _RAND_add ptr (fromIntegral len) (fromIntegral entropy)
+
+-- | a fapdom int
+fapdom :: Int
+fapdom = 69
