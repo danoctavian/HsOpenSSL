@@ -18,27 +18,79 @@ import Foreign.ForeignPtr as Unsafe
 #endif
 import Foreign.Ptr
 import Foreign.C
-import OpenSSL.ASN1
-import OpenSSL.BIO
-{-
-import OpenSSL.EVP.Digest
-import OpenSSL.EVP.PKey
-import OpenSSL.EVP.Verify
-import OpenSSL.EVP.Internal
+import Foreign.Storable
+import Foreign.Marshal.Alloc
 import OpenSSL.Utils
-import OpenSSL.Stack
--}
+
+import Data.ByteString
+import qualified Data.ByteString.Char8 as B8
+
 import OpenSSL.X509.Name
 import OpenSSL.X509
 
 
-writeX509DER :: X509 -> IO String
-writeX509DER cert = undefined
+writeX509DER :: X509 -> IO ByteString
+writeX509DER cert
+  = withX509Ptr cert $ \certPtr -> do
+      -- a pointer to the pointer of the beginning of the buffer
+      output <- malloc :: IO (Ptr (Ptr (CChar)))
+      -- set it to null
+      poke output nullPtr
 
-readX509DER :: String -> Maybe X509
-readX509DER str = undefined
+      let cleanup = free output
+
+      len <- _i2d_X509 certPtr output
+
+      if (len <= 0)
+        then do
+          cleanup
+          raiseOpenSSLError
+        else do
+          bsPtr <- peek output
+          bs <- B8.packCStringLen (bsPtr, fromIntegral len)
+          free bsPtr
+          cleanup
+          return bs
+
+readX509DER :: ByteString -> IO (Maybe X509)
+readX509DER bs
+  = useAsCStringLen bs $ \(buf, len) -> do
+      input <- malloc :: IO (Ptr (Ptr (CChar)))
+      -- set it to point to the buffer
+      poke input buf
+
+      result <- _d2i_X509 nullPtr input (fromIntegral len)
+
+      final <- if (result == nullPtr)
+        then return Nothing
+        else fmap Just $ wrapX509 result
+      free input
+      return final
+
+-- X509 *d2i_X509(X509 **px, const unsigned char **in, int len);
+foreign import ccall safe "d2i_X509"
+        _d2i_X509 :: Ptr (Ptr X509_)
+                       -> Ptr (Ptr CChar)
+                       -> CInt
+                       -> IO (Ptr X509_)
+
+--  int i2d_X509(X509 *x, unsigned char **out);
+foreign import ccall safe "i2d_X509"
+        _i2d_X509 :: Ptr X509_
+                       -> Ptr (Ptr CChar)
+                       -> IO CInt
 
 {- MODEL 
+
+
+X509 *PEM_read_bio_X509(BIO *bp, X509 **x, pem_password_cb *cb, void *u);
+
+foreign import ccall safe "PEM_read_bio_X509"
+        _read_bio_X509 :: Ptr BIO_
+                       -> Ptr (Ptr X509_)
+                       -> FunPtr PemPasswordCallback'
+                       -> Ptr ()
+                       -> IO (Ptr X509_)
 
 how to use this funtion.
 
